@@ -1,106 +1,151 @@
-from patternmatch import matchCyclicPattern
-import preprocess as PP
+from patternmatch import matchPattern
+import preprocess as pp
 import fileparsers as fp
 import testcases as tc
+import walllabels as wl
 
-def testme():
+def testme(showme=1):
+    # find all matches
+    test0(showme,findallmatches=1)
+    test1(showme,findallmatches=1)
+    test2(showme,findallmatches=1)
+    test3(showme,findallmatches=1)
+    test4(showme,findallmatches=1)
+    test5(showme,findallmatches=1)
+    test6(showme,findallmatches=1)
+    test7(showme,findallmatches=1)
+    test8(showme,findallmatches=1)
+    # find first match only
+    test0(showme,findallmatches=0)
+    test1(showme,findallmatches=0)
+    test2(showme,findallmatches=0)
+    test3(showme,findallmatches=0)
+    test4(showme,findallmatches=0)
+    test5(showme,findallmatches=0)
+    test6(showme,findallmatches=0)
+    test7(showme,findallmatches=0)
+    test8(showme,findallmatches=0)
 
-    #################################
-
-    inds,outedges,walldomains,varsaffectedatwall,allwalllabels = PP.filterAll(*tc.test0())
+def test0(showme=1,findallmatches=1):
+    paramDict = wl.makeAllTriples(*tc.test0())
 
     pattern=['md','um','Mu','dM','md']
-    match = matchCyclicPattern(pattern,inds,outedges,walldomains,varsaffectedatwall,allwalllabels,showfirstwall=0,cyclewarn=0)
-    print match==[(3, 5, 10, 13, 11, 6, 3), (8, 10, 13, 11, 8)]
+    match = matchPattern(pattern,paramDict,cyclic=1,findallmatches=findallmatches)
+    if showme and findallmatches: print match==[(0, 1, 4, 6, 5, 2, 0), (3, 4, 6, 5, 3)]
+    if showme and not findallmatches: print match==[(0, 1, 4, 6, 5, 2, 0)]
 
     pattern=['um','md'] #intermediate extrema
-    match = matchCyclicPattern(pattern,inds,outedges,walldomains,varsaffectedatwall,allwalllabels,showfirstwall=0,cyclewarn=0)
-    print 'None' in match
+    match = matchPattern(pattern,paramDict,cyclic=0,findallmatches=findallmatches)
+    if showme: print 'None' in match
 
-    pattern=['ud','um','Mu'] # only exists as acyclic path, no associated cycle
-    match = matchCyclicPattern(pattern,inds,outedges,walldomains,varsaffectedatwall,allwalllabels,showfirstwall=0,cyclewarn=0)
-    print 'None' in match
+    pattern=['ud','um','Mu'] # acyclic 
+    match = matchPattern(pattern,paramDict,cyclic=0,findallmatches=findallmatches)
+    if showme: print match==[(1,4,6)]
 
-    #################################
-
-    inds,outedges,walldomains,varsaffectedatwall,allwalllabels = PP.filterAll(*tc.test1())
+def test1(showme=1,findallmatches=1):
+    paramDict = wl.makeAllTriples(*tc.test1())
 
     pattern=['md','um','Mu','dM','md']
-    match = matchCyclicPattern(pattern,inds,outedges,walldomains,varsaffectedatwall,allwalllabels,showfirstwall=0,cyclewarn=0)
-    print match==[(8, 10, 13, 11, 8)]
+    match = matchPattern(pattern,paramDict,cyclic=1,findallmatches=findallmatches)
+    if showme: print match==[(0, 1, 3, 2, 0)]
 
     pattern=['md','um','Mu','dM','Md'] # 'Md' DNE in graph
-    match = matchCyclicPattern(pattern,inds,outedges,walldomains,varsaffectedatwall,allwalllabels,showfirstwall=0,cyclewarn=0)
-    print 'None' in match 
+    match = matchPattern(pattern,paramDict,cyclic=0,findallmatches=findallmatches)
+    if showme: print 'None' in match 
 
     pattern=['md','Mu','dM','md'] # intermediate extrema
-    match = matchCyclicPattern(pattern,inds,outedges,walldomains,varsaffectedatwall,allwalllabels,showfirstwall=0,cyclewarn=0)
-    print 'None' in match
+    match = matchPattern(pattern,paramDict,cyclic=1,findallmatches=findallmatches)
+    if showme: print 'None' in match
 
-    #################################
-
-    inds,outedges,walldomains,varsaffectedatwall,allwalllabels = PP.filterAll(*tc.test2())
+def test2(showme=1,findallmatches=1):
+    paramDict = wl.makeAllTriples(*tc.test2())
 
     pattern=['dM','md','um','Mu','dM']
-    match = matchCyclicPattern(pattern,inds,outedges,walldomains,varsaffectedatwall,allwalllabels,showfirstwall=0,cyclewarn=0)
-    print match==[(6,3,5,8,6),(6,3,5,10,13,11,6)]
+    match = matchPattern(pattern,paramDict,cyclic=1,findallmatches=findallmatches)
+    if showme and findallmatches: print match==[(2,0,1,3,2),(2,0,1,4,6,5,2)]
+    if showme and not findallmatches: print match==[(2,0,1,3,2)]
 
     pattern=['Mu','dM','md','um','Mu']
-    match = matchCyclicPattern(pattern,inds,outedges,walldomains,varsaffectedatwall,allwalllabels,showfirstwall=0,cyclewarn=0)
-    print match==[(8,6,3,5,8),(13,11,6,3,5,10,13)]
+    match = matchPattern(pattern,paramDict,cyclic=1,findallmatches=findallmatches)
+    if showme and findallmatches: print match==[(3,2,0,1,3),(6,5,2,0,1,4,6)]
+    if showme and not findallmatches: print match==[(3,2,0,1,3)]
 
     pattern=['um','Mu'] #acyclic
-    match = matchCyclicPattern(pattern,inds,outedges,walldomains,varsaffectedatwall,allwalllabels,showfirstwall=0,cyclewarn=0)
-    print 'None' in match
+    match = matchPattern(pattern,paramDict,cyclic=0,findallmatches=findallmatches)
+    if showme and findallmatches: print match==[(1,4,6),(1,3)]
+    if showme and not findallmatches: print match==[(1,3)]
 
-    #################################
-
-    inds,outedges,walldomains,varsaffectedatwall,allwalllabels = PP.filterAll(*tc.test3())
+def test3(showme=1,findallmatches=1):
+    outedges,walldomains,varsaffectedatwall,varnames,threshnames=tc.test3()
+    paramDict = wl.makeAllTriples(outedges,walldomains,varsaffectedatwall)
     patternnames,patternmaxmin=fp.parsePatterns()
-    varnames=fp.parseVars()
-    patterns=PP.constructCyclicPatterns(varnames,patternnames,patternmaxmin)
-    match = matchCyclicPattern(patterns[0],inds,outedges,walldomains,varsaffectedatwall,allwalllabels,showfirstwall=0,cyclewarn=0)
-    print match==[(0,4,9,10,6,3,0)]
-    match = matchCyclicPattern(patterns[1],inds,outedges,walldomains,varsaffectedatwall,allwalllabels,showfirstwall=0,cyclewarn=0)
-    print 'None' in match
+    patterns=pp.translatePatterns(varnames,patternnames,patternmaxmin,cyclic=1)
+    match = matchPattern(patterns[0],paramDict,cyclic=1,findallmatches=findallmatches)
+    if showme: print match==[(0,2,4,5,3,1,0)]
+    match = matchPattern(patterns[1],paramDict,cyclic=1,findallmatches=findallmatches)
+    if showme: print 'None' in match
 
-    #################################
-
-    inds,outedges,walldomains,varsaffectedatwall,allwalllabels = PP.filterAll(*tc.test4())
+def test4(showme=1,findallmatches=1):
+    paramDict = wl.makeAllTriples(*tc.test4())
     patternnames,patternmaxmin=fp.parsePatterns()
 
     pattern=['md','um','Mu','dM','md']
-    match = matchCyclicPattern(pattern,inds,outedges,walldomains,varsaffectedatwall,allwalllabels,showfirstwall=0,cyclewarn=0)
-    print match==[(6,5,7,10,11,9,6),(6,8,11,9,6)]
+    match = matchPattern(pattern,paramDict,cyclic=1,findallmatches=findallmatches)
+    if showme and findallmatches: print match==[(1,0,2,5,6,4,1),(1,3,6,4,1)]
+    if showme and not findallmatches: print match==[(1,0,2,5,6,4,1)]
 
     pattern=['mdu','umu','Muu','dMu','mdu']
-    match = matchCyclicPattern(pattern,inds,outedges,walldomains,varsaffectedatwall,allwalllabels,showfirstwall=0,cyclewarn=0)
-    print 'None' in match
+    match = matchPattern(pattern,paramDict,cyclic=1,findallmatches=findallmatches)
+    if showme: print 'None' in match
 
-    #################################
-
-    inds,outedges,walldomains,varsaffectedatwall,allwalllabels = PP.filterAll(*tc.test5())
+def test5(showme=1,findallmatches=1):
+    outedges,walldomains,varsaffectedatwall,varnames,threshnames=tc.test5()
+    paramDict = wl.makeAllTriples(outedges,walldomains,varsaffectedatwall)
     patternnames,patternmaxmin=fp.parsePatterns()
-    varnames=fp.parseVars()
-    patterns=PP.constructCyclicPatterns(varnames,patternnames,patternmaxmin)
-    match = matchCyclicPattern(patterns[0],inds,outedges,walldomains,varsaffectedatwall,allwalllabels,showfirstwall=0,cyclewarn=0)
-    print match==[(8,13,15,18,19,12,4,1,8),(8,16,19,12,4,1,8),(0,7,15,18,19,12,4,1,0)]
-    match = matchCyclicPattern(patterns[1],inds,outedges,walldomains,varsaffectedatwall,allwalllabels,showfirstwall=0,cyclewarn=0)
-    print 'None' in match
+    patterns=pp.translatePatterns(varnames,patternnames,patternmaxmin,cyclic=1)
+    match = matchPattern(patterns[0],paramDict,cyclic=1,findallmatches=findallmatches)
+    if showme and findallmatches: print match==[(4, 8, 10, 5, 2, 1, 4), (0, 3, 7, 9, 10, 5, 2, 1, 0), (3, 7, 9, 10, 5, 2, 1, 0, 3), (4, 6, 7, 9, 10, 5, 2, 1, 4)]
+    if showme and not findallmatches: print match==[(3, 7, 9, 10, 5, 2, 1, 0, 3)]
+    match = matchPattern(patterns[1],paramDict,cyclic=1,findallmatches=findallmatches)
+    if showme: print 'None' in match
 
-    #################################
-
-    inds,outedges,walldomains,varsaffectedatwall,allwalllabels = PP.filterAll(*tc.test6())
+def test6(showme=1,findallmatches=1):
+    outedges,walldomains,varsaffectedatwall,varnames,threshnames=tc.test6()
+    paramDict = wl.makeAllTriples(outedges,walldomains,varsaffectedatwall)
     patternnames,patternmaxmin=fp.parsePatterns()
-    varnames=fp.parseVars()
-    patterns=PP.constructCyclicPatterns(varnames,patternnames,patternmaxmin)
-    solutions=[[(4, 24, 17, 7, 23, 14, 4), (4, 8, 26, 19, 11, 7, 23, 14, 4), (4, 8, 26, 10, 17, 7, 23, 14, 4), (4, 8, 18, 27, 11, 7, 23, 14, 4)],[(16,9,27,11,7,23,14,4,16)],[(25,9,27,11,25)],None,[(5,9,27,11,7,23,5)],None]
+    patterns=pp.translatePatterns(varnames,patternnames,patternmaxmin,cyclic=1)
+    solutions=[[(0, 13, 9, 2, 12, 7, 0), (0, 3, 15, 11, 6, 2, 12, 7, 0), (0, 3, 15, 5, 9, 2, 12, 7, 0), (0, 3, 10, 16, 6, 2, 12, 7, 0)],[(8,4,16,6,2,12,7,0,8)],[(14,4,16,6,14)],None,[(1,4,16,6,2,12,1)],None]
     for p,s in zip(patterns,solutions):
-        match=matchCyclicPattern(p,inds,outedges,walldomains,varsaffectedatwall,allwalllabels,showfirstwall=0,cyclewarn=0)
+        match = matchPattern(p,paramDict,cyclic=1,findallmatches=findallmatches)
         if s:
-            print match==s
+            if showme and findallmatches: print match==s
+            if showme and not findallmatches: print match[0] in s
         else:
-            print 'None' in match and 'Pattern' in match
+            if showme: print 'None' in match and 'Pattern' in match
+
+def test7(showme=1,findallmatches=1):
+    tc.test7()
+    patterns,paramDict = pp.preprocess(cyclic=1)
+    solutions=[None,None,[(1,2,3,4,5,0,1)],[(4,5,0,1,2,3,4)]]
+    for p,s in zip(patterns,solutions):
+        match = matchPattern(p,paramDict,cyclic=1,findallmatches=findallmatches)
+        if s:
+            if showme: print match==s
+        else:
+            if showme: print 'None' in match and 'Pattern' in match
+
+def test8(showme=1,findallmatches=1):
+    tc.test8()
+    patterns,paramDict = pp.preprocess(cyclic=1)
+    solutions=[[(1,2,6,0,1),(1, 3, 4, 5, 6, 0, 1)]]*4+[None]*4
+    for p,s in zip(patterns,solutions):
+        match = matchPattern(p,paramDict,cyclic=1,findallmatches=findallmatches)
+        if s:
+            if showme and findallmatches: print match==s
+            if showme and not findallmatches: print match==[s[0]]
+        else:
+            if showme: print 'None' in match and 'Pattern' in match
+
 
 if __name__=='__main__':
-	testme()
+    testme()

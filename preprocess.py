@@ -1,85 +1,107 @@
 import walllabels as WL
 import fileparsers as fp
-from scipy.sparse.csgraph import connected_components
-import numpy as np
 import itertools
 
-def preprocess(basedir):
-    # read input files
-    outedges,(walldomains,wallthresh),varnames,threshnames,(patternnames,patternmaxmin)=fp.parseAll(basedir+'outEdges.txt',basedir+'walls.txt',basedir+'variables.txt',basedir+'equations.txt',basedir+'patterns.txt')
+def preprocess(fname='dsgrn_output.json',pname='patterns.txt',cyclic=1):
+    # read input files; basedir should have dsgrn_output.json and patterns.txt
+    varnames,threshnames,domgraph,cells=fp.parseJSONFormat(fname)
+    patternnames,patternmaxmin=fp.parsePatterns(pname)
     # put max/min patterns in terms of the alphabet u,m,M,d
-    patterns=constructCyclicPatterns(varnames,patternnames,patternmaxmin)
+    patterns=translatePatterns(varnames,patternnames,patternmaxmin,cyclic=cyclic)
+    # translate domain graph into wall graph
+    outedges,wallthresh,walldomains=makeWallGraphFromDomainGraph(domgraph,cells)    
     # record which variable is affected at each wall
     varsaffectedatwall=varsAtWalls(threshnames,walldomains,wallthresh,varnames)
-    # filter out walls not involved in cycles and create wall labels for the filtered walls
-    inds,outedges,walldomains,varsaffectedatwall,allwalllabels = filterAll(outedges,walldomains,varsaffectedatwall)
-    return patterns,inds,outedges,walldomains,varsaffectedatwall,allwalllabels
+    # make wall labels
+    paramDict = WL.makeAllTriples(outedges,walldomains,varsaffectedatwall)
+    return patterns, paramDict
 
-def constructCyclicPatterns(varnames,patternnames,patternmaxmin):
+def translatePatterns(varnames,patternnames,patternmaxmin,cyclic=0):
     numvars=len(varnames)
     varinds=[[varnames.index(q) for q in p] for p in patternnames]
     patterns=[]
-    for v,p in zip(varinds,patternmaxmin):
-        P=len(p)
-        missingvars=sorted(list(set(range(numvars)).difference(set(v))))
-        if not missingvars:
-            wordlist=[['0' for _ in range(numvars)] for _ in range(P)]
-        else:
-            wordlist=[]
-            for c in itertools.combinations_with_replacement(['u','d'],len(missingvars)):
-                wl = [[c[missingvars.index(k)] if k in missingvars else '0' for k in range(numvars)] for _ in range(P)]
-                wordlist.extend(wl)
-        for j in range(len(wordlist)/P):
-            wl=wordlist[j*P:(j+1)*P]
-            for i,(k,q) in zip(v,enumerate(p)):
-                wl[k][i] = 'M' if q=='max' else 'm' 
-            for k in range(len(wl)):
-                for n in range(numvars):
-                    if wl[k][n]=='0':
-                        K=k
-                        while wl[K][n] == '0':
-                            K=(K-1)%P #the mod P means I'm assuming cyclicity
-                        wl[k][n] = 'd' if wl[K][n] in ['M','d'] else 'u'
-            if wl[0] != wl[-1]:
-                wl+=[wl[0]]
-            patterns.append([''.join(w)  for w in wl])
+    # loop over each provided pattern
+    for pvars,extrema in zip(varinds,patternmaxmin):
+        P = len(pvars)
+        # record locations of extrema
+        split_pattern=[]
+        for k in range(numvars):
+            varstring=[]
+            for j in range(P):
+                varstring.append('0' if k != pvars[j] else 'M' if extrema[j]=='max' else 'm')
+            split_pattern.append(varstring)
+        # make sure the pattern makes physical sense (no two identical extrema in a row)
+        good_pattern=1
+        for sp in split_pattern:
+            seq = filter(None,[sp[k] if sp[k] in ['m','M'] else None for k in range(P)])
+            if set(seq[::2])==set(['m','M']) or set(seq[1::2])==set(['m','M']):
+                print "Pattern {} is not consistent; not including in search. Every variable must alternate maxima and minima.".format(zip(patternnames,patternmaxmin))
+                good_pattern=0
+        # if the pattern meets the criterion, proceed with transalation
+        # first build a set of template patterns if there are missing variables in the pattern (these could either be 'u' or 'd')
+        if good_pattern:
+            missingvars=sorted(list(set(range(numvars)).difference(set(pvars))))
+            if missingvars:
+                split_patterns=[]
+                for c in itertools.combinations_with_replacement(['u','d'],len(missingvars)):
+                    spc = split_pattern[:]
+                    for k in range(numvars):
+                        if k in missingvars:
+                            spc[k]=[c[missingvars.index(k)]]*P 
+                    split_patterns.append(spc)
+            else:
+                split_patterns=[split_pattern]
+            # for each pattern, fill in the remaining blanks based on the location of the extrema
+            for pat in split_patterns:
+                for v in range(len(pat)):
+                    for k in range(P):
+                        if pat[v][k]=='0':
+                            K=k
+                            while pat[v][K]=='0' and K>0:
+                                K-=1
+                            J=k
+                            while pat[v][J]=='0' and J<P-1:
+                                J+=1
+                            pat[v][k] = 'd' if pat[v][K] in ['M','d'] or pat[v][J] in ['m','d'] else 'u'
+                pattern = [''.join([p[k] for p in pat]) for k in range(P)]
+                # if a cyclic pattern is desired, make sure first and last elements are the same
+                if cyclic and pattern[0] != pattern[-1]: 
+                    pattern.append(pattern[0])
+                patterns.append(pattern)
     return patterns
-
+ 
 def varsAtWalls(threshnames,walldomains,wallthresh,varnames):
-    varsaffectedatthresh=[-1]*len(threshnames)
+    varsaffectedatthresh=[]
     for t in threshnames:
-        varsaffectedatthresh[varnames.index(t[0])]=tuple([varnames.index(u) for u in t[1]])
+        varsaffectedatthresh.append(tuple([varnames.index(u) for u in t]))
     varsaffectedatwall=[-1]*len(walldomains)
     for k,(j,w) in zip(wallthresh,enumerate(walldomains)):
         if k>-1 and w[k]-int(w[k])<0.25 and 0<w[k]<len(varsaffectedatthresh[k])+1:
             varsaffectedatwall[j]=varsaffectedatthresh[k][int(w[k]-1)]
     return varsaffectedatwall
 
-def strongConnect(outedges):
-    adjacencymatrix=np.zeros((len(outedges),len(outedges)))
-    for i,o in enumerate(outedges):
-        for j in o:
-            adjacencymatrix[i,j]=1
-    N,components=connected_components(adjacencymatrix,directed=True,connection="strong")
-    return list(components)
+def makeWallGraphFromDomainGraph(domgraph,cells):
+    domedges=[(k,d) for k,e in enumerate(domgraph) for d in e]
+    wallgraph=[(k,j) for k,edge1 in enumerate(domedges) for j,edge2 in enumerate(domedges) if edge1[1]==edge2[0]]
+    outedges=[[] for _ in range(len(domedges))]
+    for e in wallgraph:
+        outedges[e[0]].append(e[1])
+    outedges=[tuple(o) for o in outedges]
+    wallthresh=[]
+    walldomains=[]
+    for de in domedges:
+        c0=cells[de[0]]
+        c1=cells[de[1]]
+        n=len(c0)
+        location=[False if c0[k]==c1[k] else True for k in range(n)]
+        if sum(location) > 1:
+            raise RunTimeError("The domain graph has an edge between nonadjacent domains. Aborting.")
+        elif sum(location)==0:
+            raise RunTimeError("The domain graph has a self-loop. Aborting.")
+        wallthresh.append(location.index(True))
+        walldomains.append(tuple([sum(c0[k]+c1[k])/4.0 for k in range(n)])) 
+    return outedges,wallthresh,walldomains
 
-def strongConnectWallNumbers(outedges):
-    components=strongConnect(outedges)
-    return [k for k,c in enumerate(components) if components.count(c)>1]
 
-def filterOutEdges(wallinds,outedges):
-    return [tuple([wallinds.index(j) for j in outedges[k] if j in wallinds]) for k in wallinds]
-
-def filterWallProperties(interiorinds,wallproperties):
-    # strip filtered walls from associated wall properties
-    return [[p for i,p in enumerate(wp) if i in interiorinds] for wp in wallproperties]
-
-def filterAll(outedges,walldomains,varsaffectedatwall):
-    # get indices of walls in nontrivial strongly connected components of the wall graph
-    wallinds=strongConnectWallNumbers(outedges)
-    # renumber the remaining walls and filter the wall properties
-    outedges=filterOutEdges(wallinds,outedges)
-    (walldomains,varsaffectedatwall)=filterWallProperties(wallinds,(walldomains,varsaffectedatwall))
-    # create all possible wall labels for the remaining walls
-    allwalllabels=WL.makeAllWallLabels(outedges,walldomains,varsaffectedatwall)
-    return wallinds,outedges,walldomains,varsaffectedatwall,allwalllabels
+if __name__=='__main__':
+    print makeWallGraphFromDomainGraph([[1],[2],[5,3],[4],[5],[0]])

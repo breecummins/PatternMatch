@@ -1,69 +1,52 @@
-import sys
-import walllabels as WL
-from preprocess import preprocess
+import itertools
+import walllabels as wl
+import preprocess as pp
 
-def repeatingLoop(match):
-    # see if the match has a repeating loop inside it
-    N=len(match)
-    if len(set(match)) == N:
-        return False
-    else:
-        for n in range(1,N/2+1):
-            if match[N-n:N] == match[N-2*n:N-n]:
-                return True
-        return False
-
-def recursePattern(startnode,match,matches,patterns,previouspattern,pDict):
-    if len(match) >= pDict['lenpattern'] and pDict['stop'] in pDict['allwalllabels'][match[-1]]: # the first condition requires all walls to be present in the pattern. A way to ensure this is to have only extrema in the pattern - i.e. every p in pattern has exactly one 'm' or 'M'. This is why this condition exists in the input sanity check.
-        matches.append(match)
+def recursePattern(currentwall,match,matches,patterns,pDict):
+    # THIS FUNCTION USES MEMORY INSTEAD OF CPU; walllabels_previous and walllabels_current are 
+    # different indexings of the same list. dict algorithm has only one memory structure, but
+    # is currently slower for the size of problems that we have.
+    lastwall=match[-1]
+    if len(patterns)==0:
+        if pDict['stop'] in pDict['walllabels_current'][lastwall] and ((pDict['cyclic'] and match[0]==lastwall) or not pDict['cyclic']): 
+            matches.append(tuple(match))
         return matches
     else:
-        for p,P in patterns:
-            for n in WL.getNextNodes(startnode,pDict['outedges']):  # every filtered wall has an outgoing edge
-                if len(match) == 1 or previouspattern in WL.pathDependentStringConstruction(match[-2],match[-1],n,pDict['walldomains'],pDict['outedges'],pDict['varsaffectedatwall'][match[-1]]): # consistency check to catch false positives
-                    nextwalllabels=pDict['allwalllabels'][n]
-                    if p in nextwalllabels: # if we hit the next pattern element, reduce pattern by one
-                        # WE MAY GET FALSE POSITIVES WITHOUT THE CONSISTENCY CHECK ABOVE (this is because we have to pick the right q in the next step)
-                        matches=recursePattern(n,match+[n],matches,patterns[1:],p,pDict)
-                    if P and P in nextwalllabels and not repeatingLoop(match+[n]): # if we hit an intermediate node, call pattern without reduction provided there isn't a repeating loop 
-                        matches=recursePattern(n,match+[n],matches,patterns,P,pDict)
+        extremum,intermediate = patterns[0]
+        for k,t in enumerate(pDict['triples'][lastwall]):
+            if t[1] == currentwall:
+                labels=pDict['walllabels_previous'][lastwall][k]
+                if extremum in labels: # if we hit the next pattern element, reduce pattern by one
+                    matches=recursePattern(t[2],match+[t[1]],matches,patterns[1:],pDict)
+                if intermediate in labels: # if we hit an intermediate node, keep the same pattern
+                    matches=recursePattern(t[2],match+[t[1]],matches,patterns,pDict)
         return matches
 
-def labelOptions(p):
-    # Construct the intermediate nodes that are allowed for 
-    # each word (p) in pattern. This algorithm depends on the
-    # fact that there is exactly one 'm' or 'M' in each word.
-    if 'm' in p:
-        return p.replace('m','d')
-    elif 'M' in p:
-        return p.replace('M','u')
+def recursePattern_firstmatchonly(currentwall,match,patterns,pDict):
+    # Throwing an error is a hacky kludge. I haven't been able to figure out how to fix it.
+    lastwall=match[-1]
+    if len(patterns)==0:
+        if pDict['stop'] in pDict['walllabels_current'][lastwall] and ((pDict['cyclic'] and match[0]==lastwall) or not pDict['cyclic']): 
+            raise ValueError(str([tuple(match)]))
+        else:
+            return []
     else:
-        return None
+        extremum,intermediate = patterns[0]
+        for k,t in enumerate(pDict['triples'][lastwall]):
+            if t[1] == currentwall:
+                labels=pDict['walllabels_previous'][lastwall][k]
+                if extremum in labels: # if we hit the next pattern element, reduce pattern by one
+                    recursePattern_firstmatchonly(t[2],match+[t[1]],patterns[1:],pDict)
+                if intermediate in labels: # if we hit an intermediate node, keep the same pattern
+                    recursePattern_firstmatchonly(t[2],match+[t[1]],patterns,pDict)
+        return []
 
-def wallLabelCheck(pattern,allwalllabels):
-    awl = [a for l in allwalllabels for a in l]
-    if not set(pattern).issubset(awl):
-        return "None. No results found. Pattern contains element that is not a wall label."
-    else:
-        return None
-
-def sanityCheck(pattern):
-    # Make sure the input pattern meets the requirements of the algorithm.
-    if not pattern:
-        return "None. Pattern is empty."
-    notextrema = [p for p in pattern if not set(p).intersection(['m','M'])]
-    if notextrema:
-        return "None. Pattern element(s) {} are not extrema. An 'm' or 'M' is required in every element.".format(notextrema)
-    return "sane"  
-
-def matchCyclicPattern(pattern,origwallinds,outedges,walldomains,varsaffectedatwall,allwalllabels,showfirstwall=0,cyclewarn=1):
+def matchPattern(pattern,paramDict,cyclic=1,findallmatches=1):
     '''
     This function finds paths in a directed graph that are consistent with a target pattern. The nodes
     of the directed graph are called walls, and each node is associated with a wall label (in walldomains)
     and a wall number (the index of the label in walldomains). The outgoing edges of a node with wall
     number w are stored in outedges at index w. Each element of outedges is a collection of wall numbers. 
-    The graph is assumed to consist of a collection of nontrivial strongly connected components, since only 
-    these nodes participate in cycles. (This reduction should have been performed in the preprocessing step.)
 
     The pattern is a sequence of words from the alphabet ('u','d','m','M'), with each word containing EXACTLY
     one 'm' or 'M'. The variable locations in walldomains will be transformed in a path-dependent manner into 
@@ -77,73 +60,75 @@ def matchCyclicPattern(pattern,origwallinds,outedges,walldomains,varsaffectedatw
     decreasing (down). The character 'm' means a variable is at a minimum (min). If the words 'uMdd' then 'udmd'
     appear in a pattern, the intermediate node 'uddd' may be inserted between these two in a match.
 
-    The following variables are produced by the function preprocess in this module. See the code for more information.
+    The following variables are produced by functions in the module preprocess in. See the code for more information.
 
-    pattern: list of uniform-length words from the alphabet ('u','d','m','M'); exactly one 'm' or 'M' REQUIRED per string; patterns containing exactly repeating sequences will not be found if the same walls must be traversed to match the pattern
-    origwallinds: list of integers denoting the original wall label in the full wall graph. The input data have been filtered to remove walls that cannot participate in a cycle, and the remaining walls have been renamed to the new indices of the filtered data. From now on, 'index wall n' means the wall associated with the index n in all of the filtered data.
-    outedges: list of tuples of integers denoting a directed edge from the index wall to the tuple walls
-    walldomains: list of tuples of floats denoting the variable values at the index wall
-    varsaffectedatwall: list of integers reporting which variable is affected the index wall 
-    allwalllabels: list of lists of uniform-length words from the alphabet ('u','d','m','M'); describing the possible wall labels at each node; at MOST there is one 'm' or 'M' per string
+    pattern: list of uniform-length words from the alphabet ('u','d','m','M'); exactly one 'm' or 'M' REQUIRED per string
+    paramDict keywords:
+        triples: list of tuples (previouswall,currentwall,nextwall) allowable from graph
+        walllabels_current: list of lists of uniform-length words from the alphabet ('u','d','m','M') with at most one of 
+            ['m','M'] in each word describing the possible wall labels at currentwall
+        walllabels_previous: walllabels_current re-indexed according to previouswall
 
-    showfirstwall and cyclewarn print informative messages for the user. By default, showfirstwall is turned off, since it exists only for tracking the progress of the code.
+    cyclic=1 means only cyclic paths are sought. cyclic=0 means acyclic paths are acceptable.
 
-    See patternmatch_tests.py for examples of function calls.
+    findallmatches=1 means that a list of matches will be returned. If findallmatches=0, the search aborts after finding and returning a single match.
+
+    See functions beginning with "call" below for example calls of this function.
 
     '''
-    # sanity check the input, abort if insane 
-    S=sanityCheck(pattern)
-    if S != "sane":
-        return S
-    # check if any word in pattern is not a wall label
-    # if so, there's no need to search
-    W=wallLabelCheck(pattern,allwalllabels)
-    if W:
-        return W
-    # alter pattern to cyclic if needed
-    if pattern[0] != pattern[-1]:
-        pattern.append(pattern[0])
-        if cyclewarn:
-            print 'Input pattern is assumed to cycle around in a loop.'
+    # check for empty patterns
+    if not pattern:
+        return "None. Pattern is empty."
+    # check if any word in pattern is not a wall label (it's pointless to search in that case)
+    flatlabels = [a for l in paramDict['walllabels_current'] for a in l]
+    if not set(pattern).issubset(flatlabels):
+        return "None. No results found. Pattern contains an element that is not a wall label."
     # find all possible starting nodes for a matching path
-    firstwalls=WL.getFirstwalls(pattern[0],allwalllabels)
+    startwallpairs=wl.getFirstAndNextWalls(pattern[0],paramDict['triples'],paramDict['walllabels_previous'])
+    firstwalls,nextwalls=zip(*startwallpairs)
     # return trivial length one patterns
     if len(pattern)==1:
-        return [ (origwallinds.index(w),) for w in firstwalls ] or "None. No results found."
-    # pre-cache intermediate nodes that may exist in the wall graph (saves time in recursive call)
-    patternoptions=[labelOptions(p) for p in pattern[1:]]
-    patternParams = zip(pattern[1:],patternoptions)
-    paramDict = {'walldomains':walldomains,'outedges':outedges,'stop':pattern[-1],'lenpattern':len(pattern),'varsaffectedatwall':varsaffectedatwall,'allwalllabels':allwalllabels}
+        return firstwalls
+    # pre-cache intermediate nodes that may exist in the wall graph
+    intermediatenodes=[p.replace('m','d').replace('M','u')  if set(p).intersection(['m','M']) else '' for p in pattern[1:]] 
+    patternParams = zip(pattern[1:],intermediatenodes)
+    # record stopping criterion
+    paramDict['stop'] = pattern[-1]
+    paramDict['cyclic'] = cyclic
     # find matches
-    results=[]
-    if showfirstwall:
-        print "All first walls {}".format([origwallinds[w] for w in firstwalls])
-    for w in firstwalls:
-        if showfirstwall:
-            print "First wall {}".format(origwallinds[w])
-        sys.stdout.flush() # force print messages thus far
-        R = recursePattern(w,[w],[],patternParams,[],paramDict) # seek match starting at w
-        results.extend([tuple(l) for l in R if l]) # pull out nonempty paths
-    # now translate cyclic paths into original wall numbers; not guaranteed unique because not checking for identical paths that start at different nodes
-    results = [tuple([origwallinds[r] for r in l]) for l in list(set(results)) if l[0]==l[-1]]
-    return results or "None. No results found."
+    if findallmatches:
+        results=[]
+        for w,n in startwallpairs:
+            matches = recursePattern(n,[w],[],patternParams,paramDict) # seek match starting with w, n
+            results.extend(matches) 
+        # paths not guaranteed unique so use set()
+        return list(set(results)) or "None. No results found."
+    else:
+        for w,n in startwallpairs:
+            try:
+                match = recursePattern_firstmatchonly(n,[w],patternParams,paramDict) # seek match starting with w, n
+            except ValueError as v:
+                match=eval(v.args[0])
+            if match:
+                break
+        return match or "None. No results found."
 
-def callPatternMatch(basedir='',message=''):
-    # basedir must contain the files outEdges.txt, walls.txt, patterns.txt, variables.txt, and 
-    # equations.txt.
-    if message:
-        print "\n"
-        print "-"*len(message)
-        print message
-        print "-"*len(message)
-        print "\n"
+
+def callPatternMatch(fname='dsgrn_output.json',pname='patterns.txt',rname='results.txt',cyclic=1,findallmatches=1, printtoscreen=0,writetofile=1):
+    # output printed to screen
     print "Preprocessing..."
-    Patterns,origwallinds,outedges,walldomains,varsaffectedatwall,allwalllabels=preprocess(basedir) 
-    for pattern in Patterns:
-        print "\n"
-        print '-'*25
-        print "Pattern: {}".format(pattern)
-        match=matchCyclicPattern(pattern,origwallinds,outedges,walldomains,varsaffectedatwall, allwalllabels,showfirstwall=1)
-        print "Results: {}".format(match)
-        print '-'*25
-
+    patterns,paramDict=pp.preprocess(fname,pname,cyclic) 
+    print "Searching..."
+    if writetofile: f=open(rname,'w',0)
+    for pattern in patterns:
+        matches=matchPattern(pattern,paramDict,cyclic=cyclic,findallmatches=findallmatches)
+        if printtoscreen:
+            print "\n"
+            print '-'*25
+            print "Pattern: {}".format(pattern)
+            print "Results: {}".format(matches)
+            print '-'*25
+        if writetofile and 'None' not in matches:
+            f.write("Pattern: {}".format(pattern)+'\n')
+            f.write("Results: {}".format(matches)+'\n')
+    if writetofile: f.close()
